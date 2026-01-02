@@ -139,6 +139,16 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleSearchMode(msg)
 	}
 
+	// Handle help screen - allow exit with ? or Esc
+	if m.ShowHelp {
+		switch msg.String() {
+		case "?", "esc":
+			m.ShowHelp = false
+			return m, nil
+		}
+		return m, nil
+	}
+
 	// Handle overview mode - allow exit with Esc or :
 	if m.ShowOverview {
 		switch msg.String() {
@@ -160,7 +170,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg { return UndoMsg{} }
 
 	case "?":
-		return m, func() tea.Msg { return ToggleDialogMsg{Dialog: DialogHelp} }
+		m.ShowHelp = true
+		return m, nil
 
 	case ":":
 		m.ShowOverview = true

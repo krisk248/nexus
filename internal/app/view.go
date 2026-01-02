@@ -14,6 +14,11 @@ func (m Model) View() string {
 		return "Loading..."
 	}
 
+	// Handle help screen (full screen)
+	if m.ShowHelp {
+		return m.renderHelpScreen()
+	}
+
 	// Handle overview mode
 	if m.ShowOverview {
 		return m.renderOverview()
@@ -636,6 +641,200 @@ func (m Model) renderClearTimelineDialog() string {
 	b.WriteString(lipgloss.NewStyle().Foreground(c.Error).Render("N") + " - No, cancel\n")
 
 	return s.Dialog.Render(b.String())
+}
+
+// renderHelpScreen renders the full-screen help
+func (m Model) renderHelpScreen() string {
+	c := m.CurrentTheme.Colors
+
+	// Styles for the help screen
+	borderStyle := lipgloss.NewStyle().
+		Foreground(c.Border)
+	headerStyle := lipgloss.NewStyle().
+		Foreground(c.Primary).
+		Bold(true)
+	keyStyle := lipgloss.NewStyle().
+		Foreground(c.Secondary).
+		Width(12)
+	descStyle := lipgloss.NewStyle().
+		Foreground(c.TextPrimary)
+	sectionStyle := lipgloss.NewStyle().
+		Foreground(c.Primary).
+		Bold(true)
+	mutedStyle := lipgloss.NewStyle().
+		Foreground(c.TextMuted)
+
+	var b strings.Builder
+
+	// Calculate content width (leave some margin)
+	contentWidth := m.Width - 4
+	if contentWidth > 80 {
+		contentWidth = 80
+	}
+
+	// Top border
+	b.WriteString(borderStyle.Render("╔" + strings.Repeat("═", contentWidth-2) + "╗") + "\n")
+
+	// Header
+	title := "NEXUS"
+	titlePadding := (contentWidth - 2 - len(title)) / 2
+	b.WriteString(borderStyle.Render("║") + strings.Repeat(" ", titlePadding) + headerStyle.Render(title) + strings.Repeat(" ", contentWidth-2-titlePadding-len(title)) + borderStyle.Render("║") + "\n")
+
+	subtitle := "A Terminal Task Manager"
+	subtitlePadding := (contentWidth - 2 - len(subtitle)) / 2
+	b.WriteString(borderStyle.Render("║") + strings.Repeat(" ", subtitlePadding) + mutedStyle.Render(subtitle) + strings.Repeat(" ", contentWidth-2-subtitlePadding-len(subtitle)) + borderStyle.Render("║") + "\n")
+
+	// Separator
+	b.WriteString(borderStyle.Render("╠" + strings.Repeat("═", contentWidth-2) + "╣") + "\n")
+
+	// Empty line
+	b.WriteString(borderStyle.Render("║") + strings.Repeat(" ", contentWidth-2) + borderStyle.Render("║") + "\n")
+
+	// Keyboard shortcuts in two columns
+	leftCol := []struct {
+		title string
+		keys  [][]string
+	}{
+		{
+			title: "GLOBAL",
+			keys: [][]string{
+				{"Ctrl+C", "Exit (press twice)"},
+				{"Ctrl+U", "Undo"},
+				{"Ctrl+E", "Export"},
+				{"?", "Toggle help"},
+				{":", "Month overview"},
+				{"L", "Jump to logs"},
+				{"/", "Search tasks"},
+				{"Esc", "Clear search"},
+				{"1/2/3", "Switch panes"},
+				{"Tab", "Next pane"},
+			},
+		},
+		{
+			title: "TASKS",
+			keys: [][]string{
+				{"j/k", "Navigate"},
+				{"a", "Add task"},
+				{"e", "Edit task"},
+				{"d", "Delete task"},
+				{"Space", "Toggle complete"},
+				{"D", "Delegate task"},
+				{"x", "Toggle delayed"},
+				{"s", "Start/stop timer"},
+				{"1/2/3", "Set priority"},
+				{"0", "Clear priority"},
+				{"Enter", "Expand/collapse"},
+			},
+		},
+	}
+
+	rightCol := []struct {
+		title string
+		keys  [][]string
+	}{
+		{
+			title: "CALENDAR",
+			keys: [][]string{
+				{"h/l", "Previous/next day"},
+				{"j/k", "Previous/next week"},
+				{"n/p", "Next/prev month"},
+				{"T", "Jump to today"},
+			},
+		},
+		{
+			title: "TIMELINE",
+			keys: [][]string{
+				{"j/k", "Scroll"},
+				{"Shift+C", "Clear timeline"},
+			},
+		},
+	}
+
+	// Render left column content
+	var leftLines []string
+	for _, section := range leftCol {
+		leftLines = append(leftLines, sectionStyle.Render(section.title))
+		leftLines = append(leftLines, mutedStyle.Render(strings.Repeat("─", 28)))
+		for _, kv := range section.keys {
+			leftLines = append(leftLines, keyStyle.Render(kv[0])+descStyle.Render(kv[1]))
+		}
+		leftLines = append(leftLines, "")
+	}
+
+	// Render right column content
+	var rightLines []string
+	for _, section := range rightCol {
+		rightLines = append(rightLines, sectionStyle.Render(section.title))
+		rightLines = append(rightLines, mutedStyle.Render(strings.Repeat("─", 28)))
+		for _, kv := range section.keys {
+			rightLines = append(rightLines, keyStyle.Render(kv[0])+descStyle.Render(kv[1]))
+		}
+		rightLines = append(rightLines, "")
+	}
+
+	// Combine columns
+	maxLines := len(leftLines)
+	if len(rightLines) > maxLines {
+		maxLines = len(rightLines)
+	}
+
+	colWidth := (contentWidth - 6) / 2
+	for i := 0; i < maxLines; i++ {
+		left := ""
+		right := ""
+		if i < len(leftLines) {
+			left = leftLines[i]
+		}
+		if i < len(rightLines) {
+			right = rightLines[i]
+		}
+
+		// Pad left column
+		leftLen := lipgloss.Width(left)
+		if leftLen < colWidth {
+			left = left + strings.Repeat(" ", colWidth-leftLen)
+		}
+
+		// Pad right column
+		rightLen := lipgloss.Width(right)
+		if rightLen < colWidth {
+			right = right + strings.Repeat(" ", colWidth-rightLen)
+		}
+
+		b.WriteString(borderStyle.Render("║") + "  " + left + "  " + right + borderStyle.Render("║") + "\n")
+	}
+
+	// Empty line before footer
+	b.WriteString(borderStyle.Render("║") + strings.Repeat(" ", contentWidth-2) + borderStyle.Render("║") + "\n")
+
+	// Footer separator
+	b.WriteString(borderStyle.Render("╠" + strings.Repeat("═", contentWidth-2) + "╣") + "\n")
+
+	// Footer line 1: Description
+	footerLine1 := "nexus - Track tasks, manage time, stay focused."
+	footerPad1 := (contentWidth - 2 - len(footerLine1)) / 2
+	b.WriteString(borderStyle.Render("║") + strings.Repeat(" ", footerPad1) + mutedStyle.Render(footerLine1) + strings.Repeat(" ", contentWidth-2-footerPad1-len(footerLine1)) + borderStyle.Render("║") + "\n")
+
+	// Footer line 2: Author, GitHub, Version
+	footerLine2 := fmt.Sprintf("by krisk248 • github.com/krisk248/nexus • v%s", Version)
+	footerPad2 := (contentWidth - 2 - len(footerLine2)) / 2
+	b.WriteString(borderStyle.Render("║") + strings.Repeat(" ", footerPad2) + mutedStyle.Render(footerLine2) + strings.Repeat(" ", contentWidth-2-footerPad2-len(footerLine2)) + borderStyle.Render("║") + "\n")
+
+	// Bottom border
+	b.WriteString(borderStyle.Render("╚" + strings.Repeat("═", contentWidth-2) + "╝") + "\n")
+
+	// Close hint
+	closeHint := "Press ? to close"
+	b.WriteString(strings.Repeat(" ", (contentWidth-len(closeHint))/2) + mutedStyle.Render(closeHint))
+
+	// Center the entire content
+	return lipgloss.Place(
+		m.Width,
+		m.Height,
+		lipgloss.Center,
+		lipgloss.Center,
+		b.String(),
+	)
 }
 
 // renderOverview renders the month overview screen

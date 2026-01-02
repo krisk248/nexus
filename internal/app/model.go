@@ -8,6 +8,9 @@ import (
 	"github.com/krisk248/nexus/internal/theme"
 )
 
+// Version is the current version of nexus
+var Version = "0.1.0"
+
 // Model is the main application model
 type Model struct {
 	// Window size
@@ -52,6 +55,7 @@ type Model struct {
 
 	// UI state
 	ShowOverview    bool
+	ShowHelp        bool
 	ExitConfirm     bool
 	ExitConfirmTime int64
 
