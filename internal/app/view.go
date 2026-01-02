@@ -280,8 +280,14 @@ func (m Model) renderTaskPane(width, height int) string {
 			runningText = " ●"
 		}
 
-		// Calculate available width for title
-		prefixLen := len(selector) + len(indent) + len(checkboxText) + len(priorityText) + len(expandIcon) + len(runningText)
+		// Pushed count indicator text (for width calculation)
+		pushedText := ""
+		if task.PushedCount > 0 {
+			pushedText = fmt.Sprintf(" [↷%d]", task.PushedCount)
+		}
+
+		// Calculate available width for title (include all suffixes)
+		prefixLen := len(selector) + len(indent) + len(checkboxText) + len(priorityText) + len(expandIcon) + len(runningText) + len(pushedText)
 		availableWidth := width - prefixLen - 4 // margin
 
 		// Truncate title if needed (on plain text, before styling)
@@ -301,7 +307,13 @@ func (m Model) renderTaskPane(width, height int) string {
 			runningIndicator = lipgloss.NewStyle().Foreground(c.TaskRunning).Render(" ●")
 		}
 
-		line := fmt.Sprintf("%s%s%s%s%s%s%s", selector, indent, checkbox, priority, expandIcon, title, runningIndicator)
+		// Pushed count indicator (styled)
+		pushedIndicator := ""
+		if task.PushedCount > 0 {
+			pushedIndicator = lipgloss.NewStyle().Foreground(c.Warning).Render(pushedText)
+		}
+
+		line := fmt.Sprintf("%s%s%s%s%s%s%s%s", selector, indent, checkbox, priority, expandIcon, title, runningIndicator, pushedIndicator)
 		b.WriteString(line + "\n")
 	}
 
@@ -337,7 +349,7 @@ func (m Model) renderTimelinePane(width, height int) string {
 	s := m.Styles
 	c := m.CurrentTheme.Colors
 
-	var b strings.Builder
+	var contentLines []string
 
 	// Header
 	title := "TIMELINE"
@@ -346,20 +358,23 @@ func (m Model) renderTimelinePane(width, height int) string {
 	} else {
 		title = lipgloss.NewStyle().Foreground(c.TextMuted).Render(title)
 	}
-	b.WriteString(title + "\n")
-	b.WriteString(strings.Repeat("─", width-2) + "\n")
+	contentLines = append(contentLines, title)
+	contentLines = append(contentLines, strings.Repeat("─", width-4))
 
 	// Events
 	events := m.Timeline.GetEventsForDate(m.SelectedDate.String())
-	visibleRows := height - 4
+	availableLines := height - 4
+
+	// Each event takes ~3 lines (desc, timestamp, connector)
+	visibleEvents := max(1, availableLines/3)
 
 	startIdx := m.TimelineScrollOffset
-	endIdx := min(startIdx+visibleRows, len(events))
+	endIdx := min(startIdx+visibleEvents, len(events))
 
 	// Scroll indicator (top)
 	if m.TimelineScrollOffset > 0 {
-		b.WriteString(lipgloss.NewStyle().Foreground(c.TextMuted).Render("↑ more above") + "\n")
-		visibleRows--
+		contentLines = append(contentLines, lipgloss.NewStyle().Foreground(c.TextMuted).Render("↑ more above"))
+		visibleEvents--
 	}
 
 	for i := startIdx; i < endIdx; i++ {
@@ -376,45 +391,98 @@ func (m Model) renderTimelinePane(width, height int) string {
 
 		// Event description
 		desc := fmt.Sprintf("%s %s", event.GetEventDescription(), event.TaskTitle)
-		if len(desc) > width-15 {
-			desc = desc[:width-18] + "..."
+		if len(desc) > width-18 {
+			desc = desc[:width-21] + "..."
 		}
 
-		b.WriteString(fmt.Sprintf(" %s %s\n", icon, desc))
-		b.WriteString(fmt.Sprintf("   %s\n", timestampStyled))
+		contentLines = append(contentLines, fmt.Sprintf(" %s %s", icon, desc))
+		contentLines = append(contentLines, fmt.Sprintf("   %s", timestampStyled))
 
 		// Connector line
 		if !isLast && i < endIdx-1 {
-			b.WriteString(s.TimelineConnector.Render(" │") + "\n")
+			contentLines = append(contentLines, s.TimelineConnector.Render(" │"))
 		}
 	}
 
 	// Scroll indicator (bottom)
 	if endIdx < len(events) {
-		b.WriteString(lipgloss.NewStyle().Foreground(c.TextMuted).Render("↓ more below") + "\n")
+		contentLines = append(contentLines, lipgloss.NewStyle().Foreground(c.TextMuted).Render("↓ more below"))
 	}
 
 	// Empty state
 	if len(events) == 0 {
-		emptyMsg := "No activities yet."
-		b.WriteString(lipgloss.NewStyle().Foreground(c.TextMuted).Render(emptyMsg) + "\n")
-		b.WriteString(lipgloss.NewStyle().Foreground(c.TextMuted).Render("Press 's' to start a task.") + "\n")
+		contentLines = append(contentLines, lipgloss.NewStyle().Foreground(c.TextMuted).Render("No activities yet."))
+		contentLines = append(contentLines, lipgloss.NewStyle().Foreground(c.TextMuted).Render("Press 's' to start a task."))
 	}
 
-	// Pad to fill height
-	content := b.String()
-	lines := strings.Split(content, "\n")
-	for len(lines) < height {
-		lines = append(lines, "")
+	// Build scrollbar if needed
+	scrollbar := m.renderTimelineScrollbar(height-2, len(events), visibleEvents)
+
+	// Pad content lines to fill height
+	for len(contentLines) < height-2 {
+		contentLines = append(contentLines, "")
 	}
-	if len(lines) > height {
-		lines = lines[:height]
+
+	// Combine content with scrollbar
+	var result strings.Builder
+	contentWidth := width - 3 // Leave space for scrollbar
+	for i, line := range contentLines {
+		if i >= height-2 {
+			break
+		}
+		// Pad line to content width
+		lineWidth := lipgloss.Width(line)
+		if lineWidth < contentWidth {
+			line = line + strings.Repeat(" ", contentWidth-lineWidth)
+		}
+		// Add scrollbar character
+		scrollChar := " "
+		if i < len(scrollbar) {
+			scrollChar = scrollbar[i]
+		}
+		result.WriteString(line + scrollChar + "\n")
 	}
 
 	return lipgloss.NewStyle().
 		Width(width).
 		Height(height).
-		Render(strings.Join(lines, "\n"))
+		Render(result.String())
+}
+
+// renderTimelineScrollbar renders a scrollbar for the timeline
+func (m Model) renderTimelineScrollbar(height, totalEvents, visibleEvents int) []string {
+	c := m.CurrentTheme.Colors
+
+	scrollbar := make([]string, height)
+	scrollStyle := lipgloss.NewStyle().Foreground(c.Border)
+	thumbStyle := lipgloss.NewStyle().Foreground(c.Primary)
+
+	// If no scrolling needed, return empty
+	if totalEvents <= visibleEvents || totalEvents == 0 {
+		for i := range scrollbar {
+			scrollbar[i] = " "
+		}
+		return scrollbar
+	}
+
+	// Calculate thumb size and position
+	thumbSize := max(1, height*visibleEvents/totalEvents)
+	maxScroll := totalEvents - visibleEvents
+	thumbPos := 0
+	if maxScroll > 0 {
+		thumbPos = m.TimelineScrollOffset * (height - thumbSize) / maxScroll
+	}
+
+	// Build scrollbar
+	for i := 0; i < height; i++ {
+		if i >= thumbPos && i < thumbPos+thumbSize {
+			scrollbar[i] = thumbStyle.Render("█")
+		} else {
+			scrollbar[i] = scrollStyle.Render("░")
+		}
+	}
+
+	return scrollbar
 }
 
 // renderKeyboardHints renders the keyboard hints bar
@@ -434,9 +502,9 @@ func (m Model) renderKeyboardHints() string {
 		}
 	case PaneTasks:
 		hintPairs = [][]string{
-			{"j/k", "nav"}, {"a", "add"}, {"e", "edit"}, {"d", "del"},
+			{"j/k", "nav"}, {"a", "add"}, {"e", "edit"}, {"d", "del"}, {"v", "details"},
 			{"Space", "done"}, {"D", "delegate"}, {"x", "delay"}, {"s", "start"},
-			{"/", "search"}, {"1/2/3", "priority"},
+			{"n", "next day"}, {"/", "search"}, {"1/2/3", "priority"},
 		}
 	case PaneTimeline:
 		hintPairs = [][]string{
@@ -473,6 +541,8 @@ func (m Model) renderWithDialog() string {
 		dialog = m.renderExportDialog()
 	case DialogClearTimeline:
 		dialog = m.renderClearTimelineDialog()
+	case DialogTaskDetails:
+		dialog = m.renderTaskDetailsDialog()
 	}
 
 	// Center dialog on screen
@@ -534,10 +604,12 @@ func (m Model) renderHelpDialog() string {
 				{"a", "Add task"},
 				{"e", "Edit task"},
 				{"d", "Delete task"},
+				{"v", "View full details"},
 				{"Space", "Toggle complete"},
 				{"D", "Delegate task"},
 				{"x", "Toggle delayed"},
 				{"s", "Start/stop timer"},
+				{"n", "Push to next day"},
 				{"1/2/3", "Set priority P1/P2/P3"},
 				{"0", "Clear priority"},
 				{"Enter", "Expand/collapse"},
@@ -643,6 +715,81 @@ func (m Model) renderClearTimelineDialog() string {
 	return s.Dialog.Render(b.String())
 }
 
+// renderTaskDetailsDialog renders the task details dialog
+func (m Model) renderTaskDetailsDialog() string {
+	s := m.Styles
+	c := m.CurrentTheme.Colors
+
+	task := m.GetSelectedTask()
+	if task == nil {
+		return s.Dialog.Render("No task selected")
+	}
+
+	var b strings.Builder
+
+	// Title
+	b.WriteString(s.ModalTitle.Render("Task Details") + "\n\n")
+
+	// Full title (wrapped if needed)
+	titleLabel := lipgloss.NewStyle().Foreground(c.Primary).Bold(true).Render("Title:")
+	b.WriteString(titleLabel + "\n")
+	b.WriteString(lipgloss.NewStyle().Foreground(c.TextPrimary).Render(task.Title) + "\n\n")
+
+	// State
+	stateLabel := lipgloss.NewStyle().Foreground(c.Primary).Bold(true).Render("State:")
+	stateValue := string(task.State)
+	stateStyle := lipgloss.NewStyle().Foreground(c.TextPrimary)
+	switch task.State {
+	case domain.TaskStateCompleted:
+		stateStyle = lipgloss.NewStyle().Foreground(c.TaskCompleted)
+	case domain.TaskStateDelegated:
+		stateStyle = lipgloss.NewStyle().Foreground(c.TaskDelegated)
+	case domain.TaskStateDelayed:
+		stateStyle = lipgloss.NewStyle().Foreground(c.TaskDelayed)
+	}
+	b.WriteString(stateLabel + " " + stateStyle.Render(stateValue) + "\n")
+
+	// Priority
+	priorityLabel := lipgloss.NewStyle().Foreground(c.Primary).Bold(true).Render("Priority:")
+	priorityValue := "None"
+	priorityStyle := lipgloss.NewStyle().Foreground(c.TextMuted)
+	switch task.Priority {
+	case domain.PriorityHigh:
+		priorityValue = "P1 (Critical)"
+		priorityStyle = lipgloss.NewStyle().Foreground(c.Error)
+	case domain.PriorityMed:
+		priorityValue = "P2 (Important)"
+		priorityStyle = lipgloss.NewStyle().Foreground(c.Warning)
+	case domain.PriorityLow:
+		priorityValue = "P3 (Normal)"
+		priorityStyle = lipgloss.NewStyle().Foreground(c.TextPrimary)
+	}
+	b.WriteString(priorityLabel + " " + priorityStyle.Render(priorityValue) + "\n")
+
+	// Created date
+	createdLabel := lipgloss.NewStyle().Foreground(c.Primary).Bold(true).Render("Created:")
+	createdValue := task.CreatedAt.Format("Jan 2, 2006 3:04 PM")
+	b.WriteString(createdLabel + " " + lipgloss.NewStyle().Foreground(c.TextMuted).Render(createdValue) + "\n")
+
+	// Pushed count (if any)
+	if task.PushedCount > 0 {
+		pushedLabel := lipgloss.NewStyle().Foreground(c.Primary).Bold(true).Render("Pushed:")
+		pushedValue := fmt.Sprintf("%d time(s)", task.PushedCount)
+		b.WriteString(pushedLabel + " " + lipgloss.NewStyle().Foreground(c.Warning).Render(pushedValue) + "\n")
+	}
+
+	// Running status
+	if task.IsRunning() {
+		runningLabel := lipgloss.NewStyle().Foreground(c.Primary).Bold(true).Render("Status:")
+		b.WriteString(runningLabel + " " + lipgloss.NewStyle().Foreground(c.TaskRunning).Render("Running") + "\n")
+	}
+
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().Foreground(c.TextMuted).Render("Press any key to close"))
+
+	return s.Dialog.Render(b.String())
+}
+
 // renderHelpScreen renders the full-screen help
 func (m Model) renderHelpScreen() string {
 	c := m.CurrentTheme.Colors
@@ -721,6 +868,7 @@ func (m Model) renderHelpScreen() string {
 				{"D", "Delegate task"},
 				{"x", "Toggle delayed"},
 				{"s", "Start/stop timer"},
+				{"n", "Push to next day"},
 				{"1/2/3", "Set priority"},
 				{"0", "Clear priority"},
 				{"Enter", "Expand/collapse"},
@@ -1032,6 +1180,8 @@ func (m Model) getEventColor(event *domain.TimelineEvent) lipgloss.Color {
 		return c.TaskDelegated
 	case domain.EventDelayed:
 		return c.TaskDelayed
+	case domain.EventPushed:
+		return c.Warning
 	default:
 		return c.TextPrimary
 	}

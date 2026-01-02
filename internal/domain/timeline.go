@@ -15,6 +15,7 @@ const (
 	EventDelegated TimelineEventType = "delegated"
 	EventDelayed   TimelineEventType = "delayed"
 	EventUpdated   TimelineEventType = "updated"
+	EventPushed    TimelineEventType = "pushed"
 )
 
 type TimelineEvent struct {
@@ -47,7 +48,9 @@ func NewStateChangeEvent(taskID, taskTitle string, prevState, newState TaskState
 	case TaskStateDelayed:
 		eventType = EventDelayed
 	default:
-		eventType = EventUpdated
+		// Don't log "updated" events (e.g., toggling back to todo)
+		// Only log meaningful state changes
+		return nil
 	}
 
 	return &TimelineEvent{
@@ -103,6 +106,8 @@ func (e *TimelineEvent) GetEventIcon() string {
 		return "‖"
 	case EventCreated:
 		return "+"
+	case EventPushed:
+		return "↷"
 	default:
 		return "•"
 	}
@@ -121,6 +126,8 @@ func (e *TimelineEvent) GetEventDescription() string {
 		return "delayed"
 	case EventCreated:
 		return "created"
+	case EventPushed:
+		return "pushed to next day"
 	default:
 		return "updated"
 	}

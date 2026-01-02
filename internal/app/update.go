@@ -51,14 +51,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		msg.Task.SetState(msg.NewState)
 		m.UpdateFlattenedTasks()
 		m.IsDirty = true
-		// Add timeline event
+		// Add timeline event only for meaningful state changes
 		event := domain.NewStateChangeEvent(msg.Task.ID, msg.Task.Title, msg.PrevState, msg.NewState)
-		m.Timeline.AddEvent(m.SelectedDate.String(), event)
+		if event != nil {
+			m.Timeline.AddEvent(m.SelectedDate.String(), event)
+		}
 		return m, m.saveData()
 
 	case TaskPriorityChangedMsg:
 		m.PushUndo()
 		msg.Task.SetPriority(msg.Priority)
+		m.UpdateFlattenedTasks()
+		m.IsDirty = true
+		return m, m.saveData()
+
+	case TaskPushedMsg:
+		m.PushUndo()
+		task := msg.Task
+		currentDate := m.SelectedDate.String()
+		nextDate := m.SelectedDate.AddDays(1).String()
+
+		// Increment pushed count
+		task.PushedCount++
+		task.UpdatedAt = time.Now()
+
+		// Remove from current day
+		m.Tasks.RemoveTask(currentDate, task.ID)
+
+		// Update task date and add to next day
+		task.Date = nextDate
+		m.Tasks.AddTask(task)
+
+		// Add timeline event for pushed task
+		event := domain.NewTimelineEvent(task.ID, task.Title, domain.EventPushed)
+		m.Timeline.AddEvent(currentDate, event)
+
 		m.UpdateFlattenedTasks()
 		m.IsDirty = true
 		return m, m.saveData()
@@ -390,6 +417,19 @@ func (m Model) handleTaskKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return TaskPriorityChangedMsg{Task: task, Priority: domain.PriorityNone}
 			}
 		}
+	case "n":
+		// Push task to next day
+		if task := m.GetSelectedTask(); task != nil {
+			return m, func() tea.Msg {
+				return TaskPushedMsg{Task: task}
+			}
+		}
+	case "v":
+		// View full task details
+		if m.GetSelectedTask() != nil {
+			m.ActiveDialog = DialogTaskDetails
+			return m, nil
+		}
 	case "f":
 		// Enter filter mode - next key determines filter type
 		m.CurrentMode = ModeFilter
@@ -441,6 +481,10 @@ func (m Model) handleDialogKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleExportDialogKeys(msg)
 	case DialogClearTimeline:
 		return m.handleClearTimelineDialogKeys(msg)
+	case DialogTaskDetails:
+		// Close on any key
+		m.ActiveDialog = DialogNone
+		return m, nil
 	}
 
 	return m, nil
@@ -571,5 +615,7 @@ func (m *Model) visibleTaskRows() int {
 }
 
 func (m *Model) visibleTimelineRows() int {
-	return max(5, m.Height-10)
+	// Each event takes ~3 lines (desc, timestamp, connector)
+	availableLines := max(5, m.Height-10)
+	return max(1, availableLines/3)
 }

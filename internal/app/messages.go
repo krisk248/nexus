@@ -35,6 +35,7 @@ const (
 	DialogExport
 	DialogClearTimeline
 	DialogConfirmExit
+	DialogTaskDetails
 )
 
 // Messages
@@ -75,6 +76,11 @@ type TaskStateChangedMsg struct {
 type TaskPriorityChangedMsg struct {
 	Task     *domain.Task
 	Priority domain.TaskPriority
+}
+
+// TaskPushedMsg is sent when a task is pushed to next day
+type TaskPushedMsg struct {
+	Task *domain.Task
 }
 
 // TimelineEventMsg is sent when a timeline event occurs

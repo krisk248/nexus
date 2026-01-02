@@ -25,18 +25,19 @@ const (
 )
 
 type Task struct {
-	ID        string       `json:"id"`
-	Title     string       `json:"title"`
-	State     TaskState    `json:"state"`
-	Priority  TaskPriority `json:"priority"`
-	CreatedAt time.Time    `json:"createdAt"`
-	UpdatedAt time.Time    `json:"updatedAt"`
-	StartTime *time.Time   `json:"startTime,omitempty"`
-	EndTime   *time.Time   `json:"endTime,omitempty"`
-	Children  []*Task      `json:"children,omitempty"`
-	ParentID  string       `json:"parentId,omitempty"`
-	Date      string       `json:"date"` // YYYY-MM-DD format
-	Expanded  bool         `json:"-"`    // UI state, not persisted
+	ID          string       `json:"id"`
+	Title       string       `json:"title"`
+	State       TaskState    `json:"state"`
+	Priority    TaskPriority `json:"priority"`
+	CreatedAt   time.Time    `json:"createdAt"`
+	UpdatedAt   time.Time    `json:"updatedAt"`
+	StartTime   *time.Time   `json:"startTime,omitempty"`
+	EndTime     *time.Time   `json:"endTime,omitempty"`
+	Children    []*Task      `json:"children,omitempty"`
+	ParentID    string       `json:"parentId,omitempty"`
+	Date        string       `json:"date"`        // YYYY-MM-DD format
+	PushedCount int          `json:"pushedCount"` // Times pushed to next day
+	Expanded    bool         `json:"-"`           // UI state, not persisted
 }
 
 func NewTask(title, date string) *Task {
